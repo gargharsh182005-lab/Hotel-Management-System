@@ -41,7 +41,6 @@ Applicable adjustments are calculated sequentially on the base room price.
 - **Encapsulation, Abstraction, Inheritance, Polymorphism**
 - **Strategy Pattern:** Separate dynamic pricing algorithms.
 - **Factory Pattern:** Creates pricing strategies.
-- **Observer Pattern:** Handles booking notifications.
 
 ## Installation
 
