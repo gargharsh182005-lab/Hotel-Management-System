@@ -91,6 +91,7 @@ StaySmart supports Pay at Hotel, simulated UPI, and simulated Card payments. Sim
 ## Author
 
 **Harsh Garg**  
+**Ridhvan Sharma**
 
 B.Tech – Information Technology  
 Indian Institute of Information Technology, Allahabad
