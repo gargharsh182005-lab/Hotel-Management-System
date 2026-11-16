@@ -20,6 +20,9 @@ export default function HotelDetails() {
 
   const [hotel, setHotel] = useState(null);
   const [rooms, setRooms] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [reviewSummary, setReviewSummary] = useState({ averageRating: 0, count: 0 });
+  const [reviewsError, setReviewsError] = useState("");
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(2);
@@ -36,6 +39,17 @@ export default function HotelDetails() {
 
         setHotel(hotelResponse.data.hotel);
         setRooms(roomResponse.data.rooms);
+
+        try {
+          const reviewsResponse = await API.get(`/api/reviews/hotel/${id}`);
+          setReviews(reviewsResponse.data.reviews);
+          setReviewSummary({
+            averageRating: reviewsResponse.data.averageRating,
+            count: reviewsResponse.data.count
+          });
+        } catch (error) {
+          setReviewsError(error.response?.data?.message || "Unable to load guest reviews.");
+        }
       } catch (error) {
         setMessage("Unable to load hotel details.");
       } finally {
@@ -189,7 +203,11 @@ export default function HotelDetails() {
           <div className="absolute inset-x-0 bottom-0 p-6 text-white sm:p-10">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-sm font-semibold backdrop-blur">
-                <Star size={15} className="text-orange-300" fill="currentColor" /> {hotel.rating || "New"}
+                <Star size={15} className="text-orange-300" fill="currentColor" />
+                {reviewSummary.count ? reviewSummary.averageRating.toFixed(1) : "New"}
+                <span className="ml-1 font-normal">
+                  · {reviewSummary.count} {reviewSummary.count === 1 ? "rating" : "ratings"}
+                </span>
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-sm backdrop-blur">
                 <BadgeCheck size={15} /> Guest favorite
@@ -404,6 +422,40 @@ export default function HotelDetails() {
             </section>
           </aside>
         </div>
+
+        <section className="mt-10 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Guest feedback</p>
+              <h2 className="text-2xl font-bold text-slate-950">Reviews</h2>
+            </div>
+            <p className="text-sm text-slate-500">
+              {reviewSummary.count
+                ? `${reviewSummary.averageRating.toFixed(1)} average · ${reviewSummary.count} ${reviewSummary.count === 1 ? "rating" : "ratings"}`
+                : "No ratings yet"}
+            </p>
+          </div>
+          {reviewsError ? (
+            <p role="status" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{reviewsError}</p>
+          ) : reviews.length === 0 ? (
+            <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Be the first guest to share your experience after checkout.</p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {reviews.map(review => (
+                <article key={review._id} className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-slate-900">{review.user?.name || "Guest"}</p>
+                    <span className="inline-flex items-center gap-1 text-sm font-bold text-orange-700">
+                      <Star size={15} fill="currentColor" /> {review.rating}/5
+                    </span>
+                  </div>
+                  {review.comment && <p className="mt-3 text-sm leading-6 text-slate-600">{review.comment}</p>}
+                  <p className="mt-3 text-xs text-slate-400">{new Date(review.createdAt).toLocaleDateString()}</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

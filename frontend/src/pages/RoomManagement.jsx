@@ -34,6 +34,9 @@ export default function RoomManagement() {
   const roomRequestId = useRef(0);
   const maxRoomImages = 4;
   const maxRoomImageBytes = 1024 * 1024;
+  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
+  const isManager = currentUser?.role === "manager";
+  const dashboardPath = isManager ? "/manager" : "/admin";
 
   const [form, setForm] = useState({
     hotel: "",
@@ -69,13 +72,15 @@ export default function RoomManagement() {
     ? Math.round(rooms.reduce((total, room) => total + Number(room.basePrice || 0), 0) / rooms.length)
     : 0;
 
-  // Fetch hotels
+  // Load all hotels for admins and the assigned hotel for managers.
   useEffect(() => {
     const requestId = ++hotelRequestId.current;
 
     const fetchHotels = async () => {
       try {
-        const response = await API.get("/api/hotels");
+        const response = await API.get("/api/hotels/management", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (requestId === hotelRequestId.current) {
           setHotels(response.data.hotels || []);
         }
@@ -93,7 +98,7 @@ export default function RoomManagement() {
       hotelRequestId.current += 1;
       roomRequestId.current += 1;
     };
-  }, []);
+  }, [token]);
 
   // Fetch rooms belonging to selected hotel
   const fetchRooms = async (hotelId) => {
@@ -216,7 +221,7 @@ export default function RoomManagement() {
     setMessage("");
 
     if (!token) {
-      setMessage("Please log in as an admin first.");
+      setMessage("Please log in as an administrator or assigned hotel manager.");
       return;
     }
 
@@ -325,17 +330,17 @@ export default function RoomManagement() {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <nav className="border-b border-white/10 bg-indigo-950 text-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-          <Link to="/admin" className="flex items-center gap-3">
+          <Link to={dashboardPath} className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-white/10 text-indigo-200">
               <BedDouble size={21} />
             </span>
             <span>
               <span className="block text-lg font-bold tracking-tight">StaySmart</span>
-              <span className="block text-xs text-indigo-200">Property admin</span>
+              <span className="block text-xs text-indigo-200">{isManager ? "Hotel manager" : "Property admin"}</span>
             </span>
           </Link>
           <Link
-            to="/admin"
+            to={dashboardPath}
             className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/10 hover:text-white"
           >
             Dashboard <ArrowUpRight size={16} />

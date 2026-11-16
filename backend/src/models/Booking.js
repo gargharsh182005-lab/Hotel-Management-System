@@ -59,7 +59,6 @@ const bookingSchema = new mongoose.Schema(
       basePrice: Number,
       occupancyCharge: Number,
       weekendCharge: Number,
-      demandCharge: Number,
       seasonalCharge: Number,
       finalPricePerNight: Number
     },
@@ -72,8 +71,18 @@ const bookingSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["pending", "confirmed", "cancelled", "completed", "expired"],
+      enum: ["pending", "confirmed", "checked-in", "cancelled", "completed", "expired"],
       default: "pending"
+    },
+
+    checkedInAt: {
+      type: Date,
+      default: null
+    },
+
+    checkedOutAt: {
+      type: Date,
+      default: null
     },
 
     expiresAt: {

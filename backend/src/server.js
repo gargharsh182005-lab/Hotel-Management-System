@@ -9,6 +9,7 @@ import roomRoutes from "./routes/roomRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import managerRoutes from "./routes/managerRoutes.js";
 import { expirePendingBookings } from "./services/expirePendingBookings.js";
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use("/api/rooms", roomRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/admin", managerRoutes);
 // Home route
 app.get("/", (req, res) => {
   res.send("StaySmart API is running!");

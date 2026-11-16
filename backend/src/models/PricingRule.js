@@ -15,7 +15,7 @@ const pricingRuleSchema = new mongoose.Schema(
 
     ruleType: {
       type: String,
-      enum: ["occupancy", "weekend", "seasonal", "demand"],
+      enum: ["occupancy", "weekend", "seasonal"],
       required: true
     },
 
