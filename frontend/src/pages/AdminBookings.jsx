@@ -7,7 +7,9 @@ import {
   Clock3,
   RefreshCw,
   Search,
-  Users
+  Users,
+  LogIn,
+  LogOut
 } from "lucide-react";
 import API from "../api";
 
@@ -21,6 +23,9 @@ const formatDate = value => new Date(value).toLocaleString(undefined, {
 export default function AdminBookings() {
   const navigate = useNavigate();
   const location = useLocation();
+  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
+  const isManager = currentUser?.role === "manager";
+  const dashboardPath = isManager ? "/manager" : "/admin";
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,14 +37,15 @@ export default function AdminBookings() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [processingBookingId, setProcessingBookingId] = useState("");
 
   const fetchBookings = useCallback(async (isRefresh = false, silent = false) => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user") || "null");
 
-    if (!token || user?.role !== "admin") {
-      if (token && user?.role !== "admin") {
-        setMessage("Administrator access is required to view bookings.");
+    if (!token || !["admin", "manager"].includes(user?.role)) {
+      if (token) {
+        setMessage("Administrator or hotel manager access is required to view bookings.");
         setLoading(false);
         return;
       }
@@ -60,7 +66,7 @@ export default function AdminBookings() {
     }
 
     try {
-      const response = await API.get("/api/bookings/admin", {
+      const response = await API.get("/api/bookings/management", {
         headers: { Authorization: "Bearer " + token },
         params: { page, limit: PAGE_SIZE, status, search }
       });
@@ -81,7 +87,7 @@ export default function AdminBookings() {
         return;
       }
       if (error.response?.status === 403) {
-        setMessage("Administrator access is required to view bookings.");
+        setMessage(error.response?.data?.message || "You are not assigned to manage this hotel.");
       } else {
         setMessage(error.response?.data?.message || "Unable to load bookings. Please try again.");
       }
@@ -110,6 +116,50 @@ export default function AdminBookings() {
     setSearch(searchInput.trim());
   };
 
+  const updateStayStatus = async booking => {
+    const action = booking.status === "confirmed" ? "check-in" : "check-out";
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login", {
+        replace: true,
+        state: { from: `${location.pathname}${location.search}` }
+      });
+      return;
+    }
+
+    setProcessingBookingId(booking._id);
+    setMessage("");
+    try {
+      const response = await API.patch(
+        `/api/bookings/${booking._id}/${action}`,
+        {},
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      setBookings(current => current.map(currentBooking =>
+        currentBooking._id === booking._id
+          ? { ...currentBooking, ...response.data.booking }
+          : currentBooking
+      ));
+      setMessage(response.data.message);
+    } catch (error) {
+      if (error.response?.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/login", {
+          replace: true,
+          state: {
+            from: `${location.pathname}${location.search}`,
+            message: "Your session expired. Please sign in again."
+          }
+        });
+        return;
+      }
+      setMessage(error.response?.data?.message || "Unable to update this stay.");
+    } finally {
+      setProcessingBookingId("");
+    }
+  };
+
   const newestBookingDate = now - 24 * 60 * 60 * 1000;
   const newBookings = bookings.filter(booking =>
     new Date(booking.createdAt).getTime() >= newestBookingDate
@@ -120,8 +170,8 @@ export default function AdminBookings() {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <nav className="border-b border-white/10 bg-indigo-950 text-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-          <Link to="/admin" className="text-lg font-bold tracking-tight">StaySmart <span className="text-indigo-200">Admin</span></Link>
-          <Link to="/admin" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/10 hover:text-white">
+          <Link to={dashboardPath} className="text-lg font-bold tracking-tight">StaySmart <span className="text-indigo-200">{isManager ? "Manager" : "Admin"}</span></Link>
+          <Link to={dashboardPath} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/10 hover:text-white">
             <ArrowLeft size={16} /> Dashboard
           </Link>
         </div>
@@ -131,8 +181,14 @@ export default function AdminBookings() {
         <header className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Reservations</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Booking activity</h1>
-            <p className="mt-2 text-sm text-slate-500">Track new reservations, guest details, stay dates, and payment status. Updates every 30 seconds.</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+              {isManager ? "Your hotel bookings" : "Booking activity"}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              {isManager
+                ? "Manage check-in and check-out for bookings at your assigned hotel."
+                : "Manage bookings and guest check-in/check-out across all hotels."} Updates every 30 seconds.
+            </p>
           </div>
           <button
             type="button"
@@ -199,7 +255,7 @@ export default function AdminBookings() {
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
               >
                 <option value="">All statuses</option>
-                {["pending", "confirmed", "cancelled", "completed", "expired"].map(value => (
+                {["pending", "confirmed", "checked-in", "cancelled", "completed", "expired"].map(value => (
                   <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>
                 ))}
               </select>
@@ -228,6 +284,7 @@ export default function AdminBookings() {
                         {isNew && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">New</span>}
                         <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
                           booking.status === "confirmed" ? "bg-emerald-50 text-emerald-800" :
+                          booking.status === "checked-in" ? "bg-sky-50 text-sky-800" :
                           booking.status === "cancelled" ? "bg-red-50 text-red-700" :
                           booking.status === "completed" ? "bg-slate-100 text-slate-700" :
                           booking.status === "expired" ? "bg-slate-100 text-slate-600" :
@@ -240,6 +297,8 @@ export default function AdminBookings() {
                     <div className="text-sm text-slate-600">
                       <p className="font-semibold text-slate-800">{booking.room?.roomType || "Room"} · {booking.guests} guest{booking.guests === 1 ? "" : "s"}</p>
                       <p className="mt-1">{new Date(booking.checkIn).toLocaleDateString()} – {new Date(booking.checkOut).toLocaleDateString()}</p>
+                      {booking.checkedInAt && <p className="mt-1 text-xs text-slate-500">Checked in {formatDate(booking.checkedInAt)}</p>}
+                      {booking.checkedOutAt && <p className="mt-1 text-xs text-slate-500">Checked out {formatDate(booking.checkedOutAt)}</p>}
                       <p className="mt-1 text-xs text-slate-400">Booked {formatDate(booking.createdAt)}</p>
                     </div>
                     <div className="sm:text-right">
@@ -249,6 +308,22 @@ export default function AdminBookings() {
                       <p className="mt-1 text-xs capitalize text-slate-500">
                         {booking.paymentIsSimulated ? `${booking.paymentMethod} (simulated)` : booking.paymentMethod || booking.paymentStatus}
                       </p>
+                      {(booking.status === "confirmed" && new Date(booking.checkIn).getTime() <= now ||
+                        booking.status === "checked-in") && (
+                        <button
+                          type="button"
+                          onClick={() => updateStayStatus(booking)}
+                          disabled={Boolean(processingBookingId)}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {booking.status === "confirmed" ? <LogIn size={14} /> : <LogOut size={14} />}
+                          {processingBookingId === booking._id
+                            ? "Updating..."
+                            : booking.status === "confirmed"
+                              ? "Mark check-in"
+                              : "Mark check-out"}
+                        </button>
+                      )}
                     </div>
                   </article>
                 );

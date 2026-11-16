@@ -2,7 +2,6 @@
 import OccupancyPricing from "./OccupancyPricing.js";
 import WeekendPricing from "./WeekendPricing.js";
 import SeasonalPricing from "./SeasonalPricing.js";
-import DemandPricing from "./DemandPricing.js";
 
 class PricingStrategyFactory {
   static createStrategy(type) {
@@ -15,9 +14,6 @@ class PricingStrategyFactory {
 
       case "seasonal":
         return new SeasonalPricing();
-
-      case "demand":
-        return new DemandPricing();
 
       default:
         throw new Error("Invalid pricing strategy");

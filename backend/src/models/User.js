@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema(
       default: "customer"
     },
 
+    managedHotel: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Hotel"
+    },
+
     isActive: {
       type: Boolean,
       default: true
@@ -40,6 +45,14 @@ const userSchema = new mongoose.Schema(
     }
   },
   { timestamps: true }
+);
+
+userSchema.index(
+  { managedHotel: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { managedHotel: { $type: "objectId" } }
+  }
 );
 
 const User = mongoose.model("User", userSchema);

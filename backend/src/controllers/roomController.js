@@ -45,6 +45,13 @@ export const createRoom = async (req, res) => {
       return res.status(404).json({ message: "Hotel not found" });
     }
 
+    if (
+      req.user.role === "manager" &&
+      (!req.user.managedHotel || req.user.managedHotel.toString() !== existingHotel._id.toString())
+    ) {
+      return res.status(403).json({ message: "You can only manage rooms at your assigned hotel." });
+    }
+
     const room = await Room.create({
       hotel,
       roomType,
@@ -92,9 +99,22 @@ export const updateRoom = async (req, res) => {
       }
     }
 
-    const room = await Room.findByIdAndUpdate(
-      req.params.id,
-      req.body,
+    const filter = { _id: req.params.id };
+    const updates = { ...req.body };
+    if (req.user.role === "manager") {
+      if (!req.user.managedHotel) {
+        return res.status(403).json({ message: "No hotel is assigned to this manager." });
+      }
+      if (updates.hotel && updates.hotel.toString() !== req.user.managedHotel.toString()) {
+        return res.status(403).json({ message: "You cannot move a room to another hotel." });
+      }
+      filter.hotel = req.user.managedHotel;
+      delete updates.hotel;
+    }
+
+    const room = await Room.findOneAndUpdate(
+      filter,
+      updates,
       { new: true, runValidators: true }
     );
 
@@ -114,8 +134,16 @@ export const updateRoom = async (req, res) => {
 // Delete room (soft delete)
 export const deleteRoom = async (req, res) => {
   try {
-    const room = await Room.findByIdAndUpdate(
-      req.params.id,
+    const filter = { _id: req.params.id };
+    if (req.user.role === "manager") {
+      if (!req.user.managedHotel) {
+        return res.status(403).json({ message: "No hotel is assigned to this manager." });
+      }
+      filter.hotel = req.user.managedHotel;
+    }
+
+    const room = await Room.findOneAndUpdate(
+      filter,
       { isActive: false },
       { new: true }
     );

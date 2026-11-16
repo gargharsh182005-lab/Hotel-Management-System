@@ -1,6 +1,7 @@
 
 import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
+import Review from "../models/Review.js";
 import Room from "../models/Room.js";
 import Payment from "../models/Payment.js";
 import DynamicPricingEngine from "../services/DynamicPricingEngine.js";
@@ -27,7 +28,6 @@ const getPriceBreakdown = (room, dailyPrices) => {
     occupancyCharge: average("occupancyCharge"),
     weekendCharge: average("weekendCharge"),
     seasonalCharge: average("seasonalCharge"),
-    demandCharge: average("demandCharge"),
     finalPricePerNight: Number(
       (
         dailyPrices.reduce((sum, item) => sum + item.finalPrice, 0) /
@@ -59,7 +59,7 @@ const calculateStayPricing = async (
     // Find bookings overlapping this particular night
     const bookings = await Booking.find({
       room: room._id,
-      status: { $in: ["pending", "confirmed"] },
+      status: { $in: ["pending", "confirmed", "checked-in"] },
       checkIn: { $lt: nextDate },
       checkOut: { $gt: currentDate }
     });
@@ -90,21 +90,13 @@ const calculateStayPricing = async (
     const month = currentDate.getUTCMonth();
     const isPeakSeason = [3, 4, 11].includes(month);
 
-    const demandLevel =
-      occupancy > 80
-        ? "high"
-        : occupancy > 60
-          ? "medium"
-          : "low";
-
     // Calculate dynamic price
     const result = pricingEngine.calculateFinalPrice(
       room.basePrice,
       {
         occupancy,
         isWeekend,
-        isPeakSeason,
-        demandLevel
+        isPeakSeason
       }
     );
 
@@ -114,7 +106,6 @@ const calculateStayPricing = async (
       availableRooms: nightAvailableRooms,
       isWeekend,
       isPeakSeason,
-      demandLevel,
       ...result
     });
 
@@ -364,10 +355,21 @@ export const getMyBookings = async (req, res) => {
       .populate("hotel", "name city")
       .populate("room", "roomType basePrice")
       .sort({ createdAt: -1 });
+    const reviews = await Review.find({
+      user: req.user._id,
+      booking: { $in: bookings.map(booking => booking._id) }
+    }).lean();
+    const reviewsByBooking = new Map(
+      reviews.map(review => [review.booking.toString(), review])
+    );
+    const bookingsWithReviews = bookings.map(booking => ({
+      ...booking.toObject(),
+      review: reviewsByBooking.get(booking._id.toString()) || null
+    }));
 
     res.status(200).json({
       count: bookings.length,
-      bookings
+      bookings: bookingsWithReviews
     });
 
   } catch (error) {
@@ -385,10 +387,17 @@ export const getAdminBookings = async (req, res) => {
     const { status, search } = req.query;
     const filter = {};
 
-    if (status && ["pending", "confirmed", "cancelled", "completed", "expired"].includes(status)) {
+    if (status && ["pending", "confirmed", "checked-in", "cancelled", "completed", "expired"].includes(status)) {
       filter.status = status;
     } else if (status) {
       return res.status(400).json({ message: "Invalid booking status filter." });
+    }
+
+    if (req.user.role === "manager") {
+      if (!req.user.managedHotel) {
+        return res.status(403).json({ message: "No hotel is assigned to this manager." });
+      }
+      filter.hotel = req.user.managedHotel;
     }
 
     if (typeof search === "string" && search.trim()) {
@@ -417,6 +426,77 @@ export const getAdminBookings = async (req, res) => {
   } catch (error) {
     console.error("Admin booking list error:", error);
     return res.status(500).json({ message: "Unable to load bookings." });
+  }
+};
+
+const findManagedBooking = async (req, res) => {
+  const filter = { _id: req.params.id };
+  if (req.user.role === "manager") {
+    if (!req.user.managedHotel) {
+      res.status(403).json({ message: "No hotel is assigned to this manager." });
+      return null;
+    }
+    filter.hotel = req.user.managedHotel;
+  }
+
+  const booking = await Booking.findOne(filter);
+  if (!booking) {
+    res.status(404).json({ message: "Booking not found." });
+    return null;
+  }
+  return booking;
+};
+
+export const checkInBooking = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid booking ID." });
+    }
+
+    const booking = await findManagedBooking(req, res);
+    if (!booking) {
+      return;
+    }
+    if (booking.status !== "confirmed") {
+      return res.status(400).json({ message: "Only confirmed bookings can be checked in." });
+    }
+    if (booking.checkIn > new Date()) {
+      return res.status(400).json({ message: "Check-in cannot be recorded before the booking date." });
+    }
+
+    booking.status = "checked-in";
+    booking.checkedInAt = new Date();
+    await booking.save();
+
+    return res.status(200).json({ message: "Guest checked in successfully.", booking });
+  } catch (error) {
+    console.error("Booking check-in error:", error);
+    return res.status(500).json({ message: "Unable to check in this booking." });
+  }
+};
+
+export const checkOutBooking = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid booking ID." });
+    }
+
+    const booking = await findManagedBooking(req, res);
+    if (!booking) {
+      return;
+    }
+    if (booking.status !== "checked-in") {
+      return res.status(400).json({ message: "Only checked-in bookings can be checked out." });
+    }
+
+    booking.status = "completed";
+    booking.checkedOutAt = new Date();
+    await booking.save();
+
+    return res.status(200).json({ message: "Guest checked out successfully.", booking });
+  } catch (error) {
+    console.error("Booking check-out error:", error);
+    return res.status(500).json({ message: "Unable to check out this booking." });
   }
 };
 
@@ -471,7 +551,7 @@ export const cancelBooking = async (req, res) => {
 
     res.status(200).json({
       message: booking.paymentIsSimulated
-        ? "Booking cancelled. Simulated payment status updated; no money was charged."
+        ? "Booking cancelled. Simulated payment marked refunded; no money was charged or returned."
         : "Booking cancelled successfully.",
       booking
     });
@@ -507,6 +587,7 @@ export const completeBooking = async (req, res) => {
     }
 
     booking.status = "completed";
+    booking.checkedOutAt = new Date();
     booking.expiresAt = null;
 
     await booking.save();

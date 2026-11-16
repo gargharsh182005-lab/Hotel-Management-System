@@ -88,7 +88,13 @@ function App() {
                 </Link>
               )}
 
-              {user.role !== "admin" && (
+              {user.role === "manager" && (
+                <Link to="/manager" className="rounded-lg px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50">
+                  Manager dashboard
+                </Link>
+              )}
+
+              {user.role === "customer" && (
                 <Link to="/my-bookings" className="rounded-lg px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50">
                   My bookings
                 </Link>
@@ -288,13 +294,16 @@ function App() {
                     <h3 className="text-xl font-bold text-slate-900">{hotel.name}</h3>
                     <span className="flex shrink-0 items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-sm font-semibold text-orange-700">
                       <Star size={16} fill="currentColor" />
-                      {hotel.rating || "New"}
+                      {hotel.ratingCount ? hotel.rating.toFixed(1) : "New"}
                     </span>
                   </div>
 
                   <p className="mt-3 flex items-center gap-2 text-sm text-slate-500">
                     <MapPin size={16} />
                     {hotel.city}, {hotel.country}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {hotel.ratingCount || 0} {hotel.ratingCount === 1 ? "rating" : "ratings"}
                   </p>
 
                   <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">

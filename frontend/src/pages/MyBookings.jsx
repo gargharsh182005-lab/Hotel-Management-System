@@ -11,9 +11,12 @@ import {
   Hotel,
   MapPin,
   ShieldCheck,
+  Star,
   XCircle
 } from "lucide-react";
 import API from "../api";
+
+const hasStayEnded = checkOut => new Date(checkOut).getTime() <= Date.now();
 
 export default function MyBookings() {
   const navigate = useNavigate();
@@ -22,6 +25,9 @@ export default function MyBookings() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [processingBookingId, setProcessingBookingId] = useState("");
+  const [cancellingBookingId, setCancellingBookingId] = useState("");
+  const [submittingReviewId, setSubmittingReviewId] = useState("");
+  const [reviewDrafts, setReviewDrafts] = useState({});
 
   const fetchBookings = useCallback(async () => {
     const token = localStorage.getItem("token");
@@ -103,8 +109,14 @@ export default function MyBookings() {
     }
   };
 
-  const cancelBooking = async (bookingId) => {
-    if (!window.confirm("Are you sure you want to cancel this booking?")) {
+  const cancelBooking = async (booking) => {
+    const hasSimulatedPayment =
+      booking.paymentIsSimulated && booking.paymentStatus === "paid";
+    const confirmationMessage = hasSimulatedPayment
+      ? "Cancel this booking? Its simulated payment will be marked refunded. No money will be charged or returned."
+      : "Are you sure you want to cancel this booking?";
+
+    if (!window.confirm(confirmationMessage)) {
       return;
     }
 
@@ -117,15 +129,20 @@ export default function MyBookings() {
       return;
     }
 
+    setCancellingBookingId(booking._id);
+    setMessage("");
+
     try {
       const response = await API.patch(
-        `/api/bookings/${bookingId}/cancel`,
+        `/api/bookings/${booking._id}/cancel`,
         {},
         { headers: { Authorization: "Bearer " + token } }
       );
 
-      setBookings(current => current.map(booking =>
-        booking._id === bookingId ? response.data.booking : booking
+      setBookings(current => current.map(currentBooking =>
+        currentBooking._id === response.data.booking._id
+          ? { ...currentBooking, ...response.data.booking }
+          : currentBooking
       ));
       setMessage(response.data.message || "Booking cancelled successfully.");
     } catch (error) {
@@ -143,6 +160,59 @@ export default function MyBookings() {
       }
 
       setMessage(error.response?.data?.message || "Cancellation failed. Please try again.");
+    } finally {
+      setCancellingBookingId("");
+    }
+  };
+
+  const submitReview = async (event, booking) => {
+    event.preventDefault();
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login", {
+        replace: true,
+        state: { from: `${location.pathname}${location.search}` }
+      });
+      return;
+    }
+
+    const draft = reviewDrafts[booking._id] || { rating: 5, comment: "" };
+    setSubmittingReviewId(booking._id);
+    setMessage("");
+
+    try {
+      const response = await API.post(
+        "/api/reviews",
+        {
+          bookingId: booking._id,
+          rating: Number(draft.rating),
+          comment: draft.comment
+        },
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      setBookings(current => current.map(item =>
+        item._id === booking._id
+          ? { ...item, review: response.data.review }
+          : item
+      ));
+      setMessage(response.data.message);
+    } catch (error) {
+      if (error.response?.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/login", {
+          replace: true,
+          state: {
+            from: `${location.pathname}${location.search}`,
+            message: "Your session expired. Please sign in again."
+          }
+        });
+        return;
+      }
+      setMessage(error.response?.data?.message || "Unable to submit your review. Please try again.");
+    } finally {
+      setSubmittingReviewId("");
     }
   };
 
@@ -207,7 +277,13 @@ export default function MyBookings() {
           </div>
         ) : (
           <div className="space-y-5">
-            {bookings.map((booking) => (
+            {bookings.map((booking) => {
+              const canReview =
+                booking.status === "completed" ||
+                (booking.status === "confirmed" && hasStayEnded(booking.checkOut));
+              const draft = reviewDrafts[booking._id] || { rating: 5, comment: "" };
+
+              return (
               <article key={booking._id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
                 <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:px-7 sm:py-6">
                   <div className="flex items-start gap-4">
@@ -228,6 +304,10 @@ export default function MyBookings() {
                   <span className={`inline-flex h-fit items-center gap-1.5 self-start rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
                     booking.status === "confirmed"
                       ? "bg-emerald-50 text-emerald-800"
+                      : booking.status === "checked-in"
+                      ? "bg-sky-50 text-sky-800"
+                      : booking.status === "completed"
+                      ? "bg-slate-100 text-slate-700"
                       : booking.status === "cancelled"
                       ? "bg-red-50 text-red-700"
                       : booking.status === "expired"
@@ -329,16 +409,83 @@ export default function MyBookings() {
                     {["pending", "confirmed"].includes(booking.status) &&
                       new Date(booking.checkIn) > new Date() && (
                         <button
-                          onClick={() => cancelBooking(booking._id)}
+                          type="button"
+                          onClick={() => cancelBooking(booking)}
+                          disabled={Boolean(cancellingBookingId || processingBookingId)}
                           className="inline-flex items-center gap-2 rounded-xl border border-red-100 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-50"
                         >
-                          <XCircle size={17} /> Cancel
+                          <XCircle size={17} />
+                          {cancellingBookingId === booking._id
+                            ? "Cancelling..."
+                            : booking.paymentIsSimulated && booking.paymentStatus === "paid"
+                            ? "Cancel & simulated refund"
+                            : "Cancel booking"}
                         </button>
                       )}
                   </div>
                 </div>
+
+                {booking.review ? (
+                  <div className="border-t border-slate-100 bg-emerald-50/60 px-5 py-4 sm:px-7">
+                    <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+                      <Star size={16} fill="currentColor" />
+                      Your rating: {booking.review.rating}/5
+                    </p>
+                    {booking.review.comment && (
+                      <p className="mt-2 text-sm leading-6 text-slate-700">{booking.review.comment}</p>
+                    )}
+                  </div>
+                ) : canReview ? (
+                  <form
+                    onSubmit={event => submitReview(event, booking)}
+                    className="border-t border-slate-100 bg-slate-50/70 px-5 py-5 sm:px-7"
+                  >
+                    <h3 className="text-sm font-bold text-slate-900">How was your stay?</h3>
+                    <p className="mt-1 text-xs text-slate-500">Share a rating and an optional comment after checkout.</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto] sm:items-end">
+                      <label className="block text-xs font-semibold text-slate-600">
+                        Rating
+                        <select
+                          value={draft.rating}
+                          onChange={event => setReviewDrafts(current => ({
+                            ...current,
+                            [booking._id]: { ...draft, rating: event.target.value }
+                          }))}
+                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800"
+                        >
+                          {[5, 4, 3, 2, 1].map(rating => (
+                            <option key={rating} value={rating}>{rating} {rating === 1 ? "star" : "stars"}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-600">
+                        Review (optional)
+                        <textarea
+                          value={draft.comment}
+                          maxLength={500}
+                          rows={2}
+                          onChange={event => setReviewDrafts(current => ({
+                            ...current,
+                            [booking._id]: { ...draft, comment: event.target.value }
+                          }))}
+                          placeholder="Tell other guests about your experience"
+                          className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-normal text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={Boolean(submittingReviewId)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Star size={16} />
+                        {submittingReviewId === booking._id ? "Submitting..." : "Submit review"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

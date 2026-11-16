@@ -9,8 +9,7 @@ class DynamicPricingEngine {
       basePrice,
       occupancyCharge: 0,
       weekendCharge: 0,
-      seasonalCharge: 0,
-      demandCharge: 0
+      seasonalCharge: 0
     };
 
     const strategies = [
@@ -28,11 +27,6 @@ class DynamicPricingEngine {
         type: "seasonal",
         value: conditions.isPeakSeason,
         key: "seasonalCharge"
-      },
-      {
-        type: "demand",
-        value: conditions.demandLevel,
-        key: "demandCharge"
       }
     ];
 

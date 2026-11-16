@@ -22,6 +22,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/bookings" element={<AdminBookings />} />
         <Route path="/admin/rooms" element={<RoomManagement />} />
+        <Route path="/manager" element={<AdminDashboard />} />
+        <Route path="/manager/bookings" element={<AdminBookings />} />
+        <Route path="/manager/rooms" element={<RoomManagement />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>
