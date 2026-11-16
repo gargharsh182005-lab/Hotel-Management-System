@@ -5,7 +5,7 @@ A full-stack hotel management and booking system with a **Dynamic Pricing Engine
 ## Features
 
 - User registration and JWT-based authentication.
-- Role-based access for customers, admins, and managers.
+- Role-based access for customers and admins.
 - Hotel and room management.
 - Room availability checking and booking.
 - Dynamic room pricing based on multiple factors.
